@@ -1,0 +1,132 @@
+## FUNCTIONAL ANNOTATION OF MAGs USING eggNOG-mapper v2 ##
+# setting path to the eggnog dbs
+export EGGNOG_DATA_DIR=../eggnog_db
+for i in $(cat ../high_qual_bins.txt)
+do
+mkdir -p "$i"
+emapper.py -m diamond --itype metagenome --genepred prodigal --cpu 25 -i ../../6.MAGs/output/final_bins/"$i".fa -o ./"$i" --dmnd_iterate no --excel
+done
+module unload
+
+##### pulling out only the genes of interest ####
+awk -F'\t' '($9 ~ /narG|narZ|narH|narI|napA|napB|nasA|nirB|nirD|nrfH|nirS|norC|nosZ|ynfE|ynfF|dmsA2|dmsA|torA|torZ|bisC|ydeP|ywfI|cld/) || ($9 == "-" && $21 ~ /Molybdopterin|Chlor_dismutase/)' "$i".emapper.annotations > 10.genes_of_interest/1.genes_input/all_genes_of_interest_filtered.txt
+
+# cd into the folder
+#cd ./10.genes_of_interest
+
+# Directory where the output files will be stored
+#mkdir -p 2.extracted_sequences
+#output_dir="2.extracted_sequences/unk_mol"
+#mkdir -p "$output_dir"
+
+### BEFORE THIS FILTER EACH GENE OUT ON THE CSV FILE (of all_genes_of_interest_filtered.txt) and then copy the query seqs to make the input file unk_mol_genes.txt here ###
+# Input file with filenames and sequence headers
+#input_file="unk_mol_genes.txt" # Make sure to replace this with the correct gene name every time
+
+# Read each line from the input file
+#while IFS= read -r line
+#do
+    # Extract the filename and sequence header from the line
+    #filename=$(echo "$line" | awk '{print $1}')
+    #sequence_header=$(echo "$line" | awk '{print $2}')
+
+    # Full path to the fasta file
+    #fasta_file="../8.eggnog_mapper_mags/fasta_outputs/${filename}.emapper.genepred.fasta"
+
+    # Check if the file exists
+    #if [ ! -f "$fasta_file" ]; then
+        #echo "File $fasta_file not found."
+        #continue
+    #fi
+
+    # Use awk to find the sequence in the file and output it until '*' is reached to get the whole amino acid sequence
+    #awk -v header="^>$sequence_header " '
+        #$0 ~ header {printit=1}
+        #printit {print}
+        #/\*/ {if (printit) exit}
+    #' "$fasta_file" >> "$output_dir/${filename}_unk_mol_seqs.fasta"
+#done < "$input_file"
+
+# getting all the reads together in one file
+#cat 2.extracted_sequences/unk_mol/*.fasta > 2.extracted_sequences/unk_mol/all_unk_mol_seqs.fasta
+
+# counting the no of sequneces in the cat file to see if it matches the no of query seqs
+#grep -c '^>' 2.extracted_sequences/unk_mol/all_unk_mol_seqs.fasta
+
+
+######################################
+## replacing headers 
+# copying the catted all_genes files 
+#mkdir -p 2.extracted_sequences/all_genes_fasta_renamed
+ 
+# Loop through each line in the file
+#while IFS= read -r line; do
+  #ORIGINAL_HEADER=$(echo "$line" | cut -d '-' -f 1)
+   #NEW_HEADER=$(echo "$line" | cut -d '-' -f 2 | tr -d '[:space:]')  # Remove any whitespace
+  
+  #echo "Original Header: $ORIGINAL_HEADER"
+  #echo "New Header: $NEW_HEADER"
+
+  # Use sed to replace the headers in the fasta file
+  #sed "s/>$ORIGINAL_HEADER/>$NEW_HEADER/g" 2.extracted_sequences/all_genes_fasta_renamed/all_dmsA2_seqs.fasta > 2.extracted_sequences/all_genes_fasta_renamed/temp_dmsA2.fasta
+  
+  # Replace the original file with the modified temp file
+  #mv 2.extracted_sequences/all_genes_fasta_renamed/temp_dmsA2.fasta 2.extracted_sequences/all_genes_fasta_renamed/all_dmsA2_seqs.fasta
+
+#done < renaming_fasta_headers_list/dmsA2_rename_list.txt
+
+# counting the length of the seqs for each gene 
+#cd 2.extracted_sequences/all_genes_fasta_renamed/
+#module load seqkit/2.8.0
+#for i in $(cat gene_names.txt)
+#do
+#seqkit fx2tab --length --name --header-line "$i".fasta
+#done
+#module unload seqkit/2.8.0
+
+###########################################
+# bringing all the renamed fasta files for all the genes of interest into one file
+#cat 2.extracted_sequences/all_genes_fasta_renamed/*fasta > 2.extracted_sequences/all_genes_fasta_renamed/all_gene_seqs.fasta
+
+############################################
+# using CD HIT to cluster the seqs 
+###
+## NOTE 1: all the genes seq were checked and 98% clustering identity seems to be suitable since it is keeps the species info/resolution for each of the genes of interest, look at the excel file clust_thres_genes_of_interest
+## NOTE 2: I catted all the seqs for all genes of interest into one file and then chceked their percentage identity across all the 469 seqs. Seems like they all are more than 98% diff so we can stick to the 98% clustering threshold. Except for three very short seqs  has similarity with the other segs. one of them torA is very short compared to the other torA seqs can so could be non-specific, so using a size threshold, say the sequence needs to be at least 70% length of the cluster representative. This should work for all cases, but for the norC seqs that are similar to the A. guillouiae napA seqs we need to see if we look norC represemntataion is lost from the applying a clustering size threshold --_ WE DID GET REP SEQS FOR norC with -c 0.98 and -s 0.7, SO ALL GOOD HERE
+###
+
+# running CDHIT now 
+# cd into the folder
+#cd all_genes_fasta_renamed
+#module load cd-hit/4.8.1
+#mkdir -p cd_hit_output
+#cd-hit -i all_gene_seqs.fasta -o cd_hit_output/cd_hit_output.fasta -c 0.98 -s 0.7 -n 5 -T 8 -sc 0
+# -c 0.98 - 98% clustering threshold 
+# -s 0.7 - seqs need to be at least 70% of the cluster rep to be included in the rep seq
+# -n 5 - word size of 5 is recommended fir clustering threshold of 0.7 to 1.0 (refer https://github.com/weizhongli/cdhit/blob/master/doc/cdhit-user-guide.wiki)
+# -sc 0 - defualt is 0 so technically no need to specify, but this sorts cluster rep seqs in decreasing order of length
+#module unload cd-hit/4.8.1
+
+###########################################################
+# using DIAMOND for protein vs DNA alignments
+#cd /data/Food/analysis/R1150_biotransformation/shotgun_chl_milk/10.genes_of_interest/2.extracted_sequences/all_genes_fasta_renamed
+#mkdir -p diamond_db
+#module load diamond/2.1.8-162
+#diamond makedb --in cd_hit_output/cd_hit_output.fasta -d diamond_db
+#module unload diamond/2.1.8-162
+# moving the diamond db
+#mv diamond_db.dmnd diamond_db
+
+# using diamond blastx mode for aligning reads (DNA seqs) to the protien ref database (with genes of interest)
+module load diamond/2.1.8-162
+#mkdir -p 10.genes_of_interest/3.reads_mapped
+#cd 10.genes_of_interest/3.reads_mapped
+for i in $(cat ../../filename_reads.txt)
+do
+diamond blastx -q ../../9.superfocus_reads/1.merged_reads/"$i"_merged.fasta \
+ -d ../2.extracted_sequences/all_genes_fasta_renamed/diamond_db/diamond_db.dmnd -o "$i"_gene_matches.tsv --threads 16
+# not using senitive or ultra sensitive becsue with wnat higher identity or stronger matches >70% (look at https://github.com/bbuchfink/diamond/wiki/1.-Tutorial)
+done
+module unload diamond/2.1.8-162
+
+
