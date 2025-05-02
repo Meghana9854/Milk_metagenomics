@@ -1,0 +1,93 @@
+
+## Performing Quality Control (QC) on the raw shotgun sequencing data ##
+
+# First running FastQC pre QC #
+mkdir FastQC
+module load fastqc/0.11.8
+for i in $(cat filenames.txt)
+do
+fastqc -o FastQC "$i"_R1.fastq.gz "$i"_R2.fastq.gz
+done
+module unload fastqc/0.11.8
+
+# running multiqc to generate a report for all samples pre QC
+module load  multiqc/1.9
+multiqc FastQC
+module unload  multiqc/1.9
+mv multiqc_data FastQC
+mv multiqc_report.html FastQC
+
+# then running trim galore #
+mkdir -p ./2.QCed_reads
+mkdir ./2.QCed_reads/TrimmingReports/
+mkdir ./2.QCed_reads/FastQC/
+mkdir ./2.QCed_reads/TrimmedFastQ/
+
+for i in $(cat filenames.txt)
+do
+    module load cutadapt/2.6
+    module load fastqc/0.11.8
+    module load trimgalore/0.6.1
+    trim_galore --paired "$i"_R1.fastq.gz "$i"_R2.fastq.gz --fastqc -j 8 -o "$i"_trimout
+    module unload trimgalore/0.6.1
+    module unload cutadapt/2.6
+    module unload fastqc/0.11.8
+
+    mv "$i"_trimout/"$i"_R1_val_1.fq.gz 2.QCed_reads/TrimmedFastQ/"$i"_trimmed_R1.fastq.gz
+    mv "$i"_trimout/"$i"_R2_val_2.fq.gz 2.QCed_reads/TrimmedFastQ/"$i"_trimmed_R2.fastq.gz
+    mv "$i"_trimout/*_trimming_report.txt 2.QCed_reads/TrimmingReports/
+    mv "$i"_trimout/*.html 2.QCed_reads/FastQC/
+    mv "$i"_trimout/*_fastqc.zip 2.QCed_reads/FastQC
+
+    rm -r "$i"_trimout
+done
+
+# running multiqc to generate a report for all samples post QC
+module load multiqc/1.9
+multiqc ./2.QCed_reads/FastQC
+module unload multiqc/1.9
+mv multiqc_data ./2.QCed_reads/FastQC/
+mv multiqc_report.html ./2.QCed_reads/FastQC/
+
+## Removal of contaminating host reads (in this case Bos taurus) ##
+mkdir -p ./3.host_removal_cow/
+
+# First on cow host DNA #
+for i in $(cat filenames.txt)
+do
+    module load bowtie2/2.4.4
+    bowtie2 -x /data/databases/hostremoval/Bos_taurus/Bowtie2/bos_taurus -1 ./2.QCed_reads/TrimmedFastQ/"$i"_trimmed_R1.fastq.gz -2 ./2.QCed_reads/TrimmedFastQ/"$i"_trimmed_R2.fastq.gz -S "$i".sam -p 8
+    module unload bowtie2/2.4.4
+
+    module load samtools/1.10
+    samtools view -bS "$i".sam -@ 8 > "$i".bam
+    rm "$i".sam
+    samtools view -b -f 12 -F 256 "$i".bam -@ 8 > "$i"_nonhost.bam
+    rm "$i".bam
+    samtools sort -n "$i"_nonhost.bam -T "$i"_nonhost_temp -o "$i"_nonhost_sorted.bam -@ 8
+    rm "$i"_nonhost.bam
+    module unload samtools/1.10
+
+    module load bedtools/2.27.1
+    bedtools bamtofastq -i "$i"_nonhost_sorted.bam -fq ./3.host_removal/"$i"_microbial_R1.fastq -fq2 ./3.host_removal/"$i"_microbial_R2.fastq
+    rm "$i"_nonhost_sorted.bam
+    module unload bedtools/2.27.1
+
+    gzip ./3.host_removal/"$i"_microbial_R1.fastq ./3.host_removal/"$i"_microbial_R2.fastq
+done
+
+# Running FastQC post host removal #
+mkdir -p ./3.host_removal/FastQC
+module load fastqc/0.11.8
+for i in $(cat filenames.txt)
+do
+fastqc -o ./3.host_removal/FastQC ./3.host_removal/"$i"_microbial_R1.fastq.gz ./3.host_removal/"$i"_microbial_R2.fastq.gz
+done
+module unload fastqc/0.11.8
+
+# running multiqc to generate a report for all samples psot host removal #
+module load  multiqc/1.9
+multiqc ./3.host_removal/FastQC
+module unload  multiqc/1.9
+mv multiqc_data ./3.host_removal/FastQC/
+mv multiqc_report.html ./3.host_removal/FastQC/
