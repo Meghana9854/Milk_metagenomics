@@ -1,0 +1,29 @@
+## MAG ASSEMBLY WITH METAWRAP ##
+mkdir -p output
+module load metawrap/1.3.2
+
+for x in $(ls *_1.fastq|cut -d "_" -f1);
+do
+        mkdir output/"$x"
+        echo "STARTED QUALITY FILTERING"
+        metawrap read_qc -1 ./"$x"_1.fastq -2 ./"$x"_2.fastq -t 30 --skip-bmtagger -o ./output/"$x"/READ_QC
+        echo "DONE QC" 
+        echo "STARTED ASSEMBLING WITH MegaHIT"
+        metawrap assembly -1 ./output/"$x"/READ_QC/final_pure_reads_1.fastq -2 ./output/"$x"/READ_QC/final_pure_reads_2.fastq -m 900 -t 30 --megahit -o ./output/"$x"/ASSEMBLY
+       echo "DONE MegaHIT"
+       echo "STARTED BINNING WITH TWO BINNING TOOLS"
+       metawrap binning -o ./output/"$x"/INITIAL_BINNING -t 30 -a ./output/"$x"/ASSEMBLY/final_assembly.fasta --metabat2 --maxbin2 ./output/"$x"/READ_QC/final_pure* # this step usually has --concoct as well but it keeps failing for the >100m reads MAGs so removing for now
+       echo "DONE BINNING"
+       echo "STARTED BIN REFINEMENT"
+       #-c 90 : minimum completion 90% and -x 5: maximum contamination 5
+       module load checkm/1.0.18
+       metawrap bin_refinement -o ./output/"$x"/BIN_REFINEMENT  -t 30 -A ./output/"$x"/INITIAL_BINNING/metabat2_bins/ -B ./output/"$x"/INITIAL_BINNING/maxbin2_bins/ -C ./output/"$x"/INITIAL_BINNING/concoct_bins/ -c 90 -x 5 
+       echo "DONE BIN REFINING"
+       echo "STARTING BIN REASSEMBLY"
+       metawrap reassemble_bins -o ./output/"$x"/BIN_REASSEMBLY -1 ./output/"$x"/READ_QC/final_pure_reads_1.fastq -2 ./output/"$x"/READ_QC/final_pure_reads_2.fastq -t 30 -m 50 -c 50 -x 10 -b ./output/"$x"/BIN_REFINEMENT/metawrap_50_10_bins
+       echo "DONE BIN REASSEMBLY" 
+       echo "METAWRAP DONE on $x"
+       module unload checkm/1.0.18
+done
+
+module unload
