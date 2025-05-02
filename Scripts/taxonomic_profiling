@@ -1,0 +1,74 @@
+## USING KRAKEN2 FOR TAXONOMIC PROFILING ##
+mkdir -p 4.taxonomy/
+
+# Read sample names from samplenames.txt into an array
+    mapfile -t samples < filenames.txt
+
+module load kraken2/2.1.1
+# Iterate over the samples in the current directory
+for i in "${samples[@]}"; do
+        kraken2 --db /data/databases/kraken_gtdbtk/ --threads 10 \
+                --paired ./3.host_removal/"$i"_microbial_R1.fastq.gz ./3.host_removal/"$i"_microbial_R2.fastq.gz \
+                --output 4.taxonomy/"$i"_kraken \
+                --report 4.taxonomy/"$i"_report
+
+  module load braken/2.2
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'S' -o 4.taxonomy/"$i"_bracken.species.report
+
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'G' -o 4.taxonomy/"$i"_bracken.genus.report
+        
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'C' -o 4.taxonomy/"$i"_bracken.class.report
+
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'F' -o 4.taxonomy/"$i"_bracken.family.report
+
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'P' -o 4.taxonomy/"$i"_bracken.phylum.report
+
+  bracken -d /data/databases/kraken_gtdbtk/ \
+        -i 4.taxonomy/"$i"_report \
+        -l 'O' -o 4.taxonomy/"$i"_bracken.order.report
+done
+
+module unload braken/2.2
+module unload kraken2/2.1.1
+
+# cleaning up the reports
+# move to the directory you want to work in 
+cd ./4.taxonomy 
+
+rename 'bracken.' '' *report
+
+categories=("order" "species" "genus" "class" "phylum" "family")
+
+  for category in "${categories[@]}"; do
+    for x in $(ls *"$category".report | cut -d "_" -f1); do
+        awk -v var="$x" '{print var,$0}' OFS="\t" "$x"_"$category".report >> "$x"_samplename_added.tsv
+    done
+    for x in $(ls *samplename*); do
+        tail -n +2 $x >> "$category"_Kraken_gtdb.txt
+    done
+    rm *.tsv
+    rm *"$category".report
+  done
+  
+# moving the per taxa level outputs from the tidying up script 
+mkdir per_taxa_classification
+mv *.txt ./per_taxa_classification
+
+# moving the kraken and braken output to folders of their own 
+mkdir kraken_results
+mv *_kraken ./kraken_results 
+mv *_report ./kraken_results
+mkdir bracken_results
+mv *_report_bracken ./bracken_results
+
+module unload
